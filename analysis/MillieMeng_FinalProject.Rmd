@@ -1,0 +1,205 @@
+---
+title: "Final Project"
+author: "Millie Meng"
+date: "Spring 2026"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(readxl)
+```
+
+The following dataset is from Joeng et al. (2017), which examined attachment styles, self-compassion, and emotional distress among 473 Korean college students. The data includes measures of anxious and avoidant attachment, self-compassion and its subscales, depression, and anxiety.
+
+```{r load-data}
+# Loading the dataset on attachment styles, self-compassion, and emotional distress
+# among Korean college students (Joeng et al., 2017)
+df <- read_excel("1-s2.0-S2352340917302500-mmc2.xls")
+
+head(df)
+```
+
+Before running analyses, I converted gender and group to factor variables so R treats them as categorical. I also computed descriptive statistics for the key variables used in my analyses.
+
+```{r data-wrangling}
+# Converting gender and group to factors for analysis
+df <- df %>%
+  mutate(
+    gender = factor(gender, levels = c(1, 2), labels = c("Male", "Female")), 
+    # 1 = Male, 2 = Female; converting so R treats gender as categorical, not numeric
+    group = factor(group)
+  )
+
+# Descriptive statistics for key variables
+df %>%
+  summarise(
+    n = n(),
+    M_anxious = mean(anxious_attachment),
+    SD_anxious = sd(anxious_attachment),
+    M_avoidant = mean(avoidant_attachment),
+    SD_avoidant = sd(avoidant_attachment),
+    M_selfcomp = mean(self_compassion),
+    SD_selfcomp = sd(self_compassion),
+    M_depression = mean(depression),
+    SD_depression = sd(depression),
+    M_anxiety = mean(anxiety),
+    SD_anxiety = sd(anxiety)
+  )
+```
+
+## Analysis 1: Regression
+
+To examine whether attachment styles predict depression, I ran a multiple linear regression with anxious attachment and avoidant attachment as predictors and depression as the outcome variable.
+
+```{r regression}
+# Research question: Do anxious and avoidant attachment predict depression?
+
+# Fit the regression model
+lm_depression <- lm(depression ~ anxious_attachment + avoidant_attachment, data = df)
+summary(lm_depression)
+
+# Both predictors are significant (p < .001), R² = .306
+# meaning attachment styles explain ~30% of variance in depression
+```
+
+I checked three assumptions of the regression model: normality of residuals (Shapiro-Wilk test), homoscedasticity (non-constant variance test), and linearity (residual plots).
+
+```{r regression-assumptions}
+# Checking assumptions of the regression model
+
+# Assumption 1: Normality of residuals
+res <- residuals(lm_depression)
+shapiro.test(res)
+# W = 0.969, p < .001 - normality violated, but sample size (n=473) is large enough to proceed
+
+# Assumption 2: Homoscedasticity
+ncvTest(lm_depression)
+# p = .035 - mild heteroscedasticity detected, interpret results with caution
+
+# Assumption 3: Linearity
+residualPlots(lm_depression)
+# Both predictors show slight non-linearity (p < .05)
+```
+
+The following plot visualizes the relationship between anxious attachment and depression with a linear regression line.
+
+```{r regression-plot}
+# Scatterplot of anxious attachment predicting depression with regression line
+ggplot(df, aes(x = anxious_attachment, y = depression)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "navy") +
+  labs(
+    title = "Anxious Attachment Predicting Depression",
+    x = "Anxious Attachment",
+    y = "Depression"
+  ) +
+  theme_minimal()
+```
+
+## Analysis 2: Two-way ANOVA
+
+To examine whether gender and university group affect anxiety levels, I ran a two-way ANOVA with gender and group as independent variables and anxiety as the outcome variable. I first computed descriptive statistics for each combination of gender and group.
+
+```{r anova}
+# Research question: Do gender and group (university) affect anxiety levels?
+
+# Descriptive statistics by group
+df %>%
+  group_by(gender, group) %>%
+  summarise(
+    n = n(),
+    M_anxiety = mean(anxiety),
+    SD_anxiety = sd(anxiety),
+    .groups = "drop"
+  )
+
+# Two-way ANOVA
+aov_model <- aov(anxiety ~ gender * group, data = df)
+summary(aov_model)
+
+# None of the effects are significant (all p > .05)
+# No post-hoc tests needed given non-significant interaction
+```
+
+I checked the assumptions of normality (Shapiro-Wilk test on residuals) and homogeneity of variance (Levene's test) for the ANOVA model.
+
+```{r anova-assumptions}
+# Normality of residuals
+aov_res <- residuals(aov_model)
+shapiro.test(aov_res) 
+# p = .001 - mild violation, but unlikely to affect results given large sample size
+
+# Homoscedasticity (Levene's test)
+leveneTest(anxiety ~ gender * group, data = df) 
+# p = .731 - assumption met; variances are equal across groups
+```
+
+The following interaction plot shows mean anxiety levels across university groups, separated by gender, with error bars representing standard error.
+
+```{r anova-plot}
+# Interaction plot: gender x group on anxiety
+df %>%
+  group_by(gender, group) %>%
+  summarise(
+    M = mean(anxiety),
+    SE = sd(anxiety) / sqrt(n()),
+    .groups = "drop"
+  ) %>%
+  ggplot(aes(x = group, y = M, color = gender, group = gender)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_errorbar(aes(ymin = M - SE, ymax = M + SE), width = 0.1) +
+  labs(
+    title = "Anxiety by Gender and University Group",
+    x = "University Group",
+    y = "Mean Anxiety",
+    color = "Gender"
+  ) +
+  theme_minimal()
+```
+
+## Analysis 3: Independent Samples T-test
+
+To examine whether males and females differ in self-compassion, I ran an independent samples t-test. I first checked homogeneity of variance using Levene's test.
+
+```{r ttest}
+# Research question: Do males and females differ in self-compassion?
+
+# Descriptive statistics by gender
+df %>%
+  group_by(gender) %>%
+  summarise(
+    n = n(),
+    M = mean(self_compassion),
+    SD = sd(self_compassion)
+  )
+
+# Check assumption: homogeneity of variance
+leveneTest(self_compassion ~ gender, data = df)
+# p = .060 - assumption met; proceeding with var.equal = TRUE
+
+# Independent samples t-test
+t.test(self_compassion ~ gender, data = df, var.equal = TRUE)
+# t = -0.055, p = .956 - no significant difference between males and females
+# in self-compassion (Males: M = 3.14, Females: M = 3.14)
+```
+
+The following violin plot shows the distribution of self-compassion scores for males and females.
+
+```{r ttest-plot}
+# Violin plot comparing self-compassion by gender
+ggplot(df, aes(x = gender, y = self_compassion, fill = gender)) +
+  geom_violin(alpha = 0.5) +
+  geom_boxplot(width = 0.1, alpha = 0.8) +
+  labs(
+    title = "Self-Compassion by Gender",
+    x = "Gender",
+    y = "Self-Compassion"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
